@@ -1,8 +1,36 @@
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.UIElements;
+//using UnityEngine.UIElements.Image;
+
+
+
+[System.Serializable]
+public class CardState
+{
+    public int id;
+    public bool isMatched;
+    public bool isFliped;
+}
+
+[System.Serializable]
+public class GameData
+{
+    public int rows;
+    public int columns;
+    public int score;
+    public int tries;
+    public int matchedPairs;
+    public int totalPairs;
+    public float timer;
+    public List<CardState> cards;
+}
+
 
 public class gameManagerCard : MonoBehaviour
 {
@@ -28,7 +56,7 @@ public class gameManagerCard : MonoBehaviour
     public TextMeshProUGUI ScoreText;
     public TextMeshProUGUI TriesText;
     public TextMeshProUGUI HighScoreText;
-    public TextMeshProUGUI MatchedText; // NEW � matched pairs UI
+    public TextMeshProUGUI MatchedText; // NEW — matched pairs UI
 
     [Header("Game Settings")]
     public float maxtime = 60f;
@@ -59,10 +87,11 @@ public class gameManagerCard : MonoBehaviour
 
     public GameObject PauseScreen;
     public GameObject Gamewon;
-    public  int timmerBonous = 5;
+    public int timmerBonous = 5;
     private const string SaveKeyScore = "CardGame_Score";
     private const string SaveKeyTime = "CardGame_Time";
     private const string SaveKeyHighScore = "CardGame_HighScore";
+    string SavePath => Application.persistentDataPath + "/memory_save.json";
 
     private void Awake()
     {
@@ -72,51 +101,172 @@ public class gameManagerCard : MonoBehaviour
 
     void Start()
     {
-        //TogglePause();
-
-        
-        SetRandomRowsAndColumns();
+        // 1️⃣ Initialize lists
         Cards = new List<Card>();
         cardIds = new List<int>();
 
-        LoadProgress();
-
+        // 2️⃣ Reset game values (fresh start)
+        score = 0;
         tries = 0;
-        UpdateTriesUI();
-        UpdateMatchedUI(); // NEW � show initial matched pairs
+        Pairsmatched = 0;
+        Timmer = maxtime;
 
         isGamefinished = false;
         isGameover = false;
 
+        // 3️⃣ Safety check
         if (cardHolder == null)
         {
-            Debug.LogError("gameManagerCard: cardHolder is not assigned.");
+            Debug.LogError("cardHolder missing");
             return;
         }
 
+        // 4️⃣ Setup GridLayout
         gridLayout = cardHolder.GetComponent<GridLayoutGroup>();
         if (gridLayout == null)
             gridLayout = cardHolder.gameObject.AddComponent<GridLayoutGroup>();
 
         gridLayout.spacing = spacing;
 
-        SetupGrid(rows, columns);
-        CreateCard(rows * columns);
+        // 5️⃣ ALWAYS CREATE A NEW GAME
 
-        Finaltext.gameObject.SetActive(false);
+
+        // 6️⃣ UI reset
         FinalUi.SetActive(false);
-
-        lastScreenSize = new Vector2(Screen.width, Screen.height);
-        lastChildCount = cardHolder.childCount;
+        Finaltext.gameObject.SetActive(false);
 
         UpdateScoreUI();
+        UpdateTriesUI();
+        UpdateMatchedUI();
+
         totalCards = Cards.Count;
     }
 
+
+    public void Initializecard(int rows, int columns)
+    {
+        SetupGrid(rows, columns);
+        CreateCard(rows * columns);
+    }
+
+
+
+
+    public void OnClickSave()
+    {
+        GameData data = new GameData
+        {
+            rows = rows,
+            columns = columns,
+            score = score,
+            tries = tries,
+            totalPairs = Totalpairs,
+            matchedPairs = Pairsmatched,
+            timer = Timmer,
+            cards = new List<CardState>()
+        };
+
+        foreach (Card c in Cards)
+        {
+            data.cards.Add(new CardState
+            {
+                id = c.cardId,
+                isMatched = c.isMatched
+            });
+        }
+
+        string json = JsonUtility.ToJson(data, true);
+        PlayerPrefs.SetString("SavedGame", json);
+        PlayerPrefs.Save();
+
+        Debug.Log("Game Saved");
+    }
+
+
+    public void OnClickLoad()
+    {
+        if (!PlayerPrefs.HasKey("SavedGame"))
+        {
+            Debug.Log("No saved game found");
+            return;
+        }
+
+        string json = PlayerPrefs.GetString("SavedGame");
+        GameData data = JsonUtility.FromJson<GameData>(json);
+
+        // 1️⃣ CLEAR CURRENT GRID
+        foreach (Card c in Cards)
+            Destroy(c.gameObject);
+
+        Cards.Clear();
+        cardIds.Clear();
+
+        // 2️⃣ RESTORE CORE DATA
+        rows = data.rows;
+        columns = data.columns;
+        score = data.score;
+        tries = data.tries;
+        Pairsmatched = data.matchedPairs;
+        Timmer = data.timer;
+        Totalpairs = data.totalPairs;
+
+        //Pairsmatched = 0;
+
+        // 3️⃣ SETUP GRID
+        SetupGrid(rows, columns);
+
+       
+
+        for (int i = 0; i < data.cards.Count; i++)
+        {
+            CardState state = data.cards[i];
+
+            Card card = Instantiate(prefabcard, cardHolder);
+            card.IsRestoring = true;                // 🔑 KEY LINE
+            card.cardId = state.id;
+            card.cardIndex = i;
+            card.gameManager = this;
+            card.cardImage.sprite = cardback;
+
+            Cards.Add(card);
+        }
+
+        //Pairsmatched = 0;
+
+        for (int i = 0; i < Cards.Count; i++)
+        {
+            CardState state = data.cards[i];
+            Card card = Cards[i];
+
+            if (state.isMatched)
+            {
+                card.SetMatched();        // ✅ stays OPEN
+                //Pairsmatched++;
+            }
+        }
+
+      
+
+
+
+
+
+        // 6️⃣ UPDATE UI
+        UpdateScoreUI();
+        UpdateTriesUI();
+        UpdateMatchedUI();
+
+        Debug.Log("Game Loaded");
+    }
+
+
+
+
+
     void SetRandomRowsAndColumns()
     {
-        rows = Random.Range(2, 5);
-        columns = Random.Range(3, 5);
+        //rows = Random.Range(2, 5);
+        //columns = Random.Range(3, 5);
     }
 
     void Update()
@@ -186,7 +336,10 @@ public class gameManagerCard : MonoBehaviour
             if (s.rect.height != 0) return s.rect.width / s.rect.height;
         }
 
-        Image img = prefabcard != null ? prefabcard.GetComponentInChildren<Image>() : null;
+        //Image img = prefabcard != null ? prefabcard.GetComponentInChildren<Image>() : null;
+
+        UnityEngine.UI.Image img = prefabcard != null ? prefabcard.GetComponentInChildren<UnityEngine.UI.Image>() : null;
+
         if (img != null && img.sprite != null && img.sprite.rect.height != 0)
             return img.sprite.rect.width / img.sprite.rect.height;
 
@@ -201,7 +354,7 @@ public class gameManagerCard : MonoBehaviour
     {
         Totalpairs = Mathf.Max(1, totalCards / 2);
         Pairsmatched = 0;
-        UpdateMatchedUI(); // NEW � reset match count
+        UpdateMatchedUI(); // NEW — reset match count
 
         cardIds.Clear();
 
@@ -228,7 +381,9 @@ public class gameManagerCard : MonoBehaviour
     {
         for (int i = 0; i < list.Count; i++)
         {
-            int rnd = Random.Range(0, list.Count);
+            //int rnd = Random.Range(0, list.Count);
+            int rnd = UnityEngine.Random.Range(0, list.Count);
+
             (list[i], list[rnd]) = (list[rnd], list[i]);
         }
     }
@@ -266,11 +421,12 @@ public class gameManagerCard : MonoBehaviour
             PlaySound(matchSound);
 
             Pairsmatched++;
-            UpdateMatchedUI(); // NEW � refresh matched UI
-
+            UpdateMatchedUI(); // NEW — refresh matched UI
+            firstcard.isMatched = true;
+            secondCard.isMatched = true;
             firstcard = null;
             secondCard = null;
-
+            //SaveGame();
             if (Pairsmatched == Totalpairs)
                 LevelFinished();
         }
@@ -304,7 +460,7 @@ public class gameManagerCard : MonoBehaviour
         isGameover = true;
         PlaySound(gameOverSound);
         FinalPanel();
-        TogglePause();  
+        TogglePause();
     }
 
     void FinalPanel()
@@ -331,7 +487,7 @@ public class gameManagerCard : MonoBehaviour
 
             Gamewon.SetActive(true);
             PauseScreen.SetActive(false);
-            Finaltext.transform.gameObject.SetActive(false);    
+            Finaltext.transform.gameObject.SetActive(false);
         }
         else if (isGameover)
         {
@@ -390,7 +546,7 @@ public class gameManagerCard : MonoBehaviour
         UpdateTriesUI();
         UpdateMatchedUI(); // NEW
         SaveProgress();
-        
+
     }
 
     void PlaySound(AudioClip clip)
@@ -416,21 +572,25 @@ public class gameManagerCard : MonoBehaviour
 #if UNITY_EDITOR
         Debug.Log("Quit called - Game would close in a build.");
         UnityEditor.EditorApplication.isPlaying = false;
+        //SaveGame();
 #else
     if (Application.platform == RuntimePlatform.Android)
     {
         Debug.Log("Closing on Android...");
         Application.Quit();
+        //SaveGame();
     }
     else if (Application.platform == RuntimePlatform.WindowsPlayer)
     {
         Debug.Log("Closing on Windows...");
         Application.Quit();
+        //SaveGame();
     }
     else
     {
         Debug.Log("Quit called on: " + Application.platform);
         Application.Quit();
+        //SaveGame();
     }
 #endif
     }
