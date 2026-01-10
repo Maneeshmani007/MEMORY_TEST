@@ -35,7 +35,7 @@ public class GameData
 public class gameManagerCard : MonoBehaviour
 {
     public static gameManagerCard Instance;
-
+    [SerializeField] private GridLayoutGroup gridLayout;
     [Header("Card Settings")]
     public Card prefabcard;
     public Sprite cardback;
@@ -80,7 +80,7 @@ public class gameManagerCard : MonoBehaviour
     private bool isGameover;
     private bool isGamefinished;
     public bool ispause;
-    private GridLayoutGroup gridLayout;
+
 
     private Vector2 lastScreenSize;
     private int lastChildCount;
@@ -91,12 +91,16 @@ public class gameManagerCard : MonoBehaviour
     private const string SaveKeyScore = "CardGame_Score";
     private const string SaveKeyTime = "CardGame_Time";
     private const string SaveKeyHighScore = "CardGame_HighScore";
+    //[SerializeField] private GridLayoutGroup gridLayout;
+    private Vector2 baseSpacing;
     string SavePath => Application.persistentDataPath + "/memory_save.json";
 
     private void Awake()
     {
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
+
+        baseSpacing = gridLayout.spacing; // store inspector spacing ONCE
     }
 
     void Start()
@@ -142,15 +146,40 @@ public class gameManagerCard : MonoBehaviour
         totalCards = Cards.Count;
     }
 
-
-    public void Initializecard(int rows, int columns)
+    void SetGridConstraint(int rows, int cols)
     {
-        SetupGrid(rows, columns);
-        CreateCard(rows * columns);
+        gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        gridLayout.constraintCount = cols;
+
+        // 🔥 FORCE UI TO APPLY CHANGE
+        LayoutRebuilder.ForceRebuildLayoutImmediate(
+            gridLayout.GetComponent<RectTransform>()
+        );
     }
 
 
+    public void Initializecard(int rows, int columns)
+    {
+        //SetupGrid(rows, columns);
+        //ClearGrid();
+        SetupGrid(rows, columns);
+        CreateCard(rows * columns);
+        SetGridConstraint(rows, columns);
+    }
+    
 
+
+
+
+    public void onclickHome()
+    {
+        foreach (Card card in Cards)
+        {
+            Destroy(card.gameObject);
+        }
+        Cards.Clear();
+        Time.timeScale = 1;
+    }
 
     public void OnClickSave()
     {
@@ -213,9 +242,10 @@ public class gameManagerCard : MonoBehaviour
         //Pairsmatched = 0;
 
         // 3️⃣ SETUP GRID
+        //SetupGrid(rows, columns);
         SetupGrid(rows, columns);
 
-       
+
 
         for (int i = 0; i < data.cards.Count; i++)
         {
@@ -245,7 +275,7 @@ public class gameManagerCard : MonoBehaviour
             }
         }
 
-      
+
 
 
 
@@ -287,40 +317,144 @@ public class gameManagerCard : MonoBehaviour
         if (Screen.width != lastScreenSize.x || Screen.height != lastScreenSize.y || cardHolder.childCount != lastChildCount)
         {
             SetupGrid(rows, columns);
+            //OnGridSelected(rows, columns);
             lastScreenSize = new Vector2(Screen.width, Screen.height);
             lastChildCount = cardHolder.childCount;
         }
     }
 
-    void SetupGrid(int rows, int cols)
+    public void ClearGrid()
     {
-        if (cardHolder == null || gridLayout == null) return;
+        // Stop any running grid resize coroutine
+        StopAllCoroutines();
 
-        RectTransform holderRect = cardHolder.GetComponent<RectTransform>();
-        if (holderRect == null) return;
-
-        float totalSpacingX = spacing.x * (cols - 1);
-        float totalSpacingY = spacing.y * (rows - 1);
-
-        float maxCellWidth = (holderRect.rect.width - totalSpacingX - gridLayout.padding.left - gridLayout.padding.right) / Mathf.Max(1, cols);
-        float maxCellHeight = (holderRect.rect.height - totalSpacingY - gridLayout.padding.top - gridLayout.padding.bottom) / Mathf.Max(1, rows);
-
-        float aspect = GetCardAspect();
-        if (aspect <= 0f) aspect = 1f;
-
-        float finalCellWidth = maxCellWidth;
-        float finalCellHeight = finalCellWidth / aspect;
-
-        if (finalCellHeight > maxCellHeight)
+        // Destroy all card instances
+        for (int i = cardHolder.transform.childCount - 1; i >= 0; i--)
         {
-            finalCellHeight = maxCellHeight;
-            finalCellWidth = finalCellHeight * aspect;
+            Destroy(cardHolder.transform.GetChild(i).gameObject);
         }
 
-        gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-        gridLayout.constraintCount = cols;
-        gridLayout.cellSize = new Vector2(finalCellWidth, finalCellHeight);
+        // Optional safety reset (does NOT break layout)
+        gridLayout.cellSize = Vector2.zero;
     }
+
+    public void OnGridSelected(int rows, int cols)
+    {
+        StopAllCoroutines();
+
+        ClearGrid();              // destroy old cards
+        //SetupGrid(rows, cols);   // MUST spawn rows * cols cards
+        CreateCard(rows * columns);
+
+        StartCoroutine(SetupGrid(rows, cols)); // 🔥 correct place
+    }
+
+
+
+
+    IEnumerator SetupGrid(int rows, int cols)
+    {
+        // 🔒 Wait until ALL cards are spawned & layout is ready
+        yield return new WaitForEndOfFrame();
+
+
+        RectTransform holder = cardHolder.GetComponent<RectTransform>();
+        if (!holder) yield break;
+
+        GridLayoutGroup grid = gridLayout;
+
+        float holderWidth = holder.rect.width;
+        float holderHeight = holder.rect.height;
+
+        // ----------------------------
+        // 1. FORCE COLUMN CONSTRAINT
+        // ----------------------------
+
+        //grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        //grid.constraintCount = cols;
+
+        // ----------------------------
+        // 2. AUTO-SCALED SPACING (NON-CUMULATIVE)
+        // ----------------------------
+        float density = Mathf.Max(rows, cols);
+        float spacingFactor = Mathf.Clamp01(6f / density);
+        Vector2 finalSpacing = baseSpacing * spacingFactor;
+        grid.spacing = finalSpacing;
+
+        // ----------------------------
+        // 3. AVAILABLE SPACE
+        // ----------------------------
+        float paddingX = grid.padding.left + grid.padding.right;
+        float paddingY = grid.padding.top + grid.padding.bottom;
+
+        float availableWidth =
+            holderWidth - paddingX - finalSpacing.x * (cols - 1);
+
+        float availableHeight =
+            holderHeight - paddingY - finalSpacing.y * (rows - 1);
+
+        // ----------------------------
+        // 4. CELL SIZE (FIT BOTH AXES)
+        // ----------------------------
+        float cellWidth = availableWidth / cols;
+        float cellHeight = availableHeight / rows;
+
+        float aspect = Mathf.Max(0.01f, GetCardAspect());
+
+        if (cellWidth / aspect > cellHeight)
+            cellWidth = cellHeight * aspect;
+        else
+            cellHeight = cellWidth / aspect;
+
+        grid.cellSize = new Vector2(cellWidth, cellHeight);
+        grid.childAlignment = TextAnchor.MiddleCenter;
+
+        // ----------------------------
+        // 5. FORCE CHILD SIZE (SAFE)
+        // ----------------------------
+        foreach (RectTransform child in grid.transform)
+        {
+            child.sizeDelta = grid.cellSize;
+            child.localScale = Vector3.one;
+        }
+
+        SetGridConstraint(rows, cols);
+        // ----------------------------
+        // 6. FINAL REBUILD (ONCE)
+        // ----------------------------
+        Canvas.ForceUpdateCanvases();
+    }
+
+
+    //void SetupGrid(int rows, int cols)
+    //{
+    //    if (cardHolder == null || gridLayout == null) return;
+
+    //    RectTransform holderRect = cardHolder.GetComponent<RectTransform>();
+    //    if (holderRect == null) return;
+
+    //    float totalSpacingX = spacing.x * (cols - 1);
+    //    float totalSpacingY = spacing.y * (rows - 1);
+
+    //    float maxCellWidth = (holderRect.rect.width - totalSpacingX - gridLayout.padding.left - gridLayout.padding.right) / Mathf.Max(1, cols);
+    //    float maxCellHeight = (holderRect.rect.height - totalSpacingY - gridLayout.padding.top - gridLayout.padding.bottom) / Mathf.Max(1, rows);
+
+    //    float aspect = GetCardAspect();
+    //    if (aspect <= 0f) aspect = 1f;
+
+    //    float finalCellWidth = maxCellWidth;
+    //    float finalCellHeight = finalCellWidth / aspect;
+
+    //    if (finalCellHeight > maxCellHeight)
+    //    {
+    //        finalCellHeight = maxCellHeight;
+    //        finalCellWidth = finalCellHeight * aspect;
+    //    }
+
+    //    gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+    //    gridLayout.constraintCount = cols;
+    //    gridLayout.cellSize = new Vector2(finalCellWidth, finalCellHeight);
+    //}
 
     float GetCardAspect()
     {
@@ -375,6 +509,7 @@ public class gameManagerCard : MonoBehaviour
                 newCard.cardImage.sprite = cardback;
             Cards.Add(newCard);
         }
+        SetGridConstraint(rows, columns);
     }
 
     void Shuffle(List<int> list)
@@ -540,6 +675,7 @@ public class gameManagerCard : MonoBehaviour
         Cards.Clear();
         SetRandomRowsAndColumns();
         SetupGrid(rows, columns);
+        //OnGridSelected(rows, columns);
         CreateCard(rows * columns);
 
         UpdateScoreUI();

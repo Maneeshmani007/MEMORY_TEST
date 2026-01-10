@@ -1,20 +1,35 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.UI;
 using System.Collections;
 using TMPro;
 
 public class LoadingDots : MonoBehaviour
 {
-    public TextMeshProUGUI loadingText;          // Assign in Inspector
-    public float dotDelay = 1f;        // 1 second delay
-    public int totalLoadingTime = 4;   // Seconds before loading next scene
+    public TextMeshProUGUI loadingText;
+    public float dotDelay = 1f;
+    public int totalLoadingTime = 4;
+
     public GameObject CurrentScene;
     public GameObject nextSceneName;
 
-    void Start()
+    Coroutine loadingCoroutine;
+
+    void OnEnable()
     {
-        StartCoroutine(LoadingRoutine());
+        // Reset text immediately
+        loadingText.text = "Loading";
+
+        // Stop previous coroutine if any
+        if (loadingCoroutine != null)
+            StopCoroutine(loadingCoroutine);
+
+        // Start again whenever enabled
+        loadingCoroutine = StartCoroutine(LoadingRoutine());
+    }
+
+    void OnDisable()
+    {
+        if (loadingCoroutine != null)
+            StopCoroutine(loadingCoroutine);
     }
 
     IEnumerator LoadingRoutine()
@@ -31,6 +46,7 @@ public class LoadingDots : MonoBehaviour
             timer += dotDelay;
         }
 
+        // Switch UI
         nextSceneName.SetActive(true);
         CurrentScene.SetActive(false);
     }

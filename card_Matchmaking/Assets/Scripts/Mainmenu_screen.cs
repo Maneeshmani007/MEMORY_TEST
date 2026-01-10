@@ -4,15 +4,16 @@ using UnityEngine;
 
 public class Mainmenu_screen : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
+    public GameObject NextSCreen;
+    public GameObject CurrentScreen;
+    public void OnclickPlayBtn()
     {
-        
+        NextSCreen.SetActive(true);
+        CurrentScreen.SetActive(false);
     }
 
-    // Update is called once per frame
-    void Update()
+    public void OnclickQuitBtn()
     {
-        
+        Application.Quit();
     }
 }
