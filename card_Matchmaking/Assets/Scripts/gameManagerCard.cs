@@ -80,6 +80,7 @@ public class gameManagerCard : MonoBehaviour
     private bool isGameover;
     private bool isGamefinished;
     public bool ispause;
+    public bool isGameplay;
 
 
     private Vector2 lastScreenSize;
@@ -87,6 +88,7 @@ public class gameManagerCard : MonoBehaviour
 
     public GameObject PauseScreen;
     public GameObject Gamewon;
+    public GameObject GameOver;
     public int timmerBonous = 5;
     private const string SaveKeyScore = "CardGame_Score";
     private const string SaveKeyTime = "CardGame_Time";
@@ -162,11 +164,17 @@ public class gameManagerCard : MonoBehaviour
     {
         //SetupGrid(rows, columns);
         //ClearGrid();
+        isGameplay = true;
+        isGamefinished = false;
+        TimmerText.transform.gameObject.SetActive(true);
+        Finaltext.transform.gameObject.SetActive(false);
+        TimmerText.text = maxtime.ToString();
+        tries = 0;
         SetupGrid(rows, columns);
         CreateCard(rows * columns);
         SetGridConstraint(rows, columns);
     }
-    
+
 
 
 
@@ -299,12 +307,14 @@ public class gameManagerCard : MonoBehaviour
         //columns = Random.Range(3, 5);
     }
 
+
     void Update()
     {
-        if (!isGamefinished && !isGameover)
+        if (!isGamefinished && !isGameover && isGameplay == true)
         {
             if (Timmer > 0)
             {
+                if (isGamefinished == true) return;
                 Timmer -= Time.deltaTime;
                 UpdateTimmerText();
             }
@@ -592,10 +602,20 @@ public class gameManagerCard : MonoBehaviour
 
     void Gameover()
     {
-        isGameover = true;
+        Debug.Log("Game Over");
+        Finaltext.transform.gameObject.SetActive(true);
         PlaySound(gameOverSound);
         FinalPanel();
         TogglePause();
+        TimmerText.transform.gameObject.SetActive(false);
+        TimmerText.text = 0.ToString();
+        if (isGameover) return;
+        isGameover = true;   // 🔥 STOP TIMER
+        Timmer = 0f;
+        //////addeded
+        UpdateTimmerText();
+        //Time.timeScale = 0;
+
     }
 
     void FinalPanel()
@@ -623,6 +643,12 @@ public class gameManagerCard : MonoBehaviour
             Gamewon.SetActive(true);
             PauseScreen.SetActive(false);
             Finaltext.transform.gameObject.SetActive(false);
+            TimmerText.transform.gameObject.SetActive(false);
+
+            PlayerPrefs.DeleteAll();
+            PlayerPrefs.Save();
+
+            //Timmer = 0f;
         }
         else if (isGameover)
         {
