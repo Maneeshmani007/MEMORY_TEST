@@ -23,7 +23,7 @@ public class TimmerScript : MonoBehaviour
     {
         if (!IsTimmerRunning)
         {
-            StartCoroutine(coountDown());
+            //StartCoroutine(coountDown());
         }
     }
 

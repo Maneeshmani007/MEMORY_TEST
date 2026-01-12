@@ -82,6 +82,8 @@ public class gameManagerCard : MonoBehaviour
     public bool ispause;
     public bool isGameplay;
 
+    public Animator addonTimmerpopup;
+
 
     private Vector2 lastScreenSize;
     private int lastChildCount;
@@ -107,11 +109,11 @@ public class gameManagerCard : MonoBehaviour
 
     void Start()
     {
-        // 1️⃣ Initialize lists
+
         Cards = new List<Card>();
         cardIds = new List<int>();
 
-        // 2️⃣ Reset game values (fresh start)
+
         score = 0;
         tries = 0;
         Pairsmatched = 0;
@@ -120,24 +122,24 @@ public class gameManagerCard : MonoBehaviour
         isGamefinished = false;
         isGameover = false;
 
-        // 3️⃣ Safety check
+
         if (cardHolder == null)
         {
             Debug.LogError("cardHolder missing");
             return;
         }
 
-        // 4️⃣ Setup GridLayout
+
         gridLayout = cardHolder.GetComponent<GridLayoutGroup>();
         if (gridLayout == null)
             gridLayout = cardHolder.gameObject.AddComponent<GridLayoutGroup>();
 
         gridLayout.spacing = spacing;
 
-        // 5️⃣ ALWAYS CREATE A NEW GAME
 
 
-        // 6️⃣ UI reset
+
+
         FinalUi.SetActive(false);
         Finaltext.gameObject.SetActive(false);
 
@@ -153,26 +155,30 @@ public class gameManagerCard : MonoBehaviour
         gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         gridLayout.constraintCount = cols;
 
-        // 🔥 FORCE UI TO APPLY CHANGE
+
         LayoutRebuilder.ForceRebuildLayoutImmediate(
             gridLayout.GetComponent<RectTransform>()
         );
     }
 
 
-    public void Initializecard(int rows, int columns)
+    public void Initializecard(int Rows, int Columns)
     {
         //SetupGrid(rows, columns);
         //ClearGrid();
         isGameplay = true;
         isGamefinished = false;
+        isGameover = false;
         TimmerText.transform.gameObject.SetActive(true);
         Finaltext.transform.gameObject.SetActive(false);
         TimmerText.text = maxtime.ToString();
         tries = 0;
-        SetupGrid(rows, columns);
-        CreateCard(rows * columns);
-        SetGridConstraint(rows, columns);
+        UpdateTriesUI();
+        rows = Rows;
+        columns = Columns;
+        SetupGrid(Rows, Columns);
+        CreateCard(Rows * Columns);
+        SetGridConstraint(Rows, Columns);
     }
 
 
@@ -186,11 +192,16 @@ public class gameManagerCard : MonoBehaviour
             Destroy(card.gameObject);
         }
         Cards.Clear();
+        isGameplay = false;
+        Timmer = maxtime;
         Time.timeScale = 1;
     }
 
     public void OnClickSave()
     {
+        string saveKey = $"SavedGame_{rows}x{columns}";
+
+
         GameData data = new GameData
         {
             rows = rows,
@@ -199,7 +210,7 @@ public class gameManagerCard : MonoBehaviour
             tries = tries,
             totalPairs = Totalpairs,
             matchedPairs = Pairsmatched,
-            timer = Timmer,
+            //timer = Timmer,
             cards = new List<CardState>()
         };
 
@@ -213,43 +224,53 @@ public class gameManagerCard : MonoBehaviour
         }
 
         string json = JsonUtility.ToJson(data, true);
-        PlayerPrefs.SetString("SavedGame", json);
+        PlayerPrefs.SetString(saveKey, json);
         PlayerPrefs.Save();
-
-        Debug.Log("Game Saved");
+        Debug.Log($"Game Saved in slot: {saveKey}");
+        //Debug.Log("Game Saved");
     }
 
 
     public void OnClickLoad()
     {
-        if (!PlayerPrefs.HasKey("SavedGame"))
+        string saveKey = $"SavedGame_{rows}x{columns}";
+
+
+        if (!PlayerPrefs.HasKey(saveKey))
         {
             Debug.Log("No saved game found");
             return;
         }
 
-        string json = PlayerPrefs.GetString("SavedGame");
+        string json = PlayerPrefs.GetString(saveKey);
         GameData data = JsonUtility.FromJson<GameData>(json);
 
-        // 1️⃣ CLEAR CURRENT GRID
+        //Debug.LogError("ROww " + data.rows + "Columnss " + data.columns);
+        if (data.rows != rows || data.columns != columns)
+        {
+            Debug.LogWarning("Slot data mismatch. Ignored.");
+            return;
+        }
+
+
         foreach (Card c in Cards)
             Destroy(c.gameObject);
 
         Cards.Clear();
         cardIds.Clear();
 
-        // 2️⃣ RESTORE CORE DATA
+
         rows = data.rows;
         columns = data.columns;
         score = data.score;
         tries = data.tries;
         Pairsmatched = data.matchedPairs;
-        Timmer = data.timer;
+        //Timmer = data.timer;
         Totalpairs = data.totalPairs;
 
         //Pairsmatched = 0;
 
-        // 3️⃣ SETUP GRID
+
         //SetupGrid(rows, columns);
         SetupGrid(rows, columns);
 
@@ -294,7 +315,8 @@ public class gameManagerCard : MonoBehaviour
         UpdateTriesUI();
         UpdateMatchedUI();
 
-        Debug.Log("Game Loaded");
+
+        Debug.Log($"Loaded save from slot: {saveKey}");
     }
 
 
@@ -335,16 +357,16 @@ public class gameManagerCard : MonoBehaviour
 
     public void ClearGrid()
     {
-        // Stop any running grid resize coroutine
+
         StopAllCoroutines();
 
-        // Destroy all card instances
+
         for (int i = cardHolder.transform.childCount - 1; i >= 0; i--)
         {
             Destroy(cardHolder.transform.GetChild(i).gameObject);
         }
 
-        // Optional safety reset (does NOT break layout)
+
         gridLayout.cellSize = Vector2.zero;
     }
 
@@ -364,7 +386,7 @@ public class gameManagerCard : MonoBehaviour
 
     IEnumerator SetupGrid(int rows, int cols)
     {
-        // 🔒 Wait until ALL cards are spawned & layout is ready
+
         yield return new WaitForEndOfFrame();
 
 
@@ -376,24 +398,17 @@ public class gameManagerCard : MonoBehaviour
         float holderWidth = holder.rect.width;
         float holderHeight = holder.rect.height;
 
-        // ----------------------------
-        // 1. FORCE COLUMN CONSTRAINT
-        // ----------------------------
+
 
         //grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         //grid.constraintCount = cols;
 
-        // ----------------------------
-        // 2. AUTO-SCALED SPACING (NON-CUMULATIVE)
-        // ----------------------------
         float density = Mathf.Max(rows, cols);
         float spacingFactor = Mathf.Clamp01(6f / density);
         Vector2 finalSpacing = baseSpacing * spacingFactor;
         grid.spacing = finalSpacing;
 
-        // ----------------------------
-        // 3. AVAILABLE SPACE
-        // ----------------------------
+
         float paddingX = grid.padding.left + grid.padding.right;
         float paddingY = grid.padding.top + grid.padding.bottom;
 
@@ -403,9 +418,7 @@ public class gameManagerCard : MonoBehaviour
         float availableHeight =
             holderHeight - paddingY - finalSpacing.y * (rows - 1);
 
-        // ----------------------------
-        // 4. CELL SIZE (FIT BOTH AXES)
-        // ----------------------------
+        //celll size  
         float cellWidth = availableWidth / cols;
         float cellHeight = availableHeight / rows;
 
@@ -419,9 +432,7 @@ public class gameManagerCard : MonoBehaviour
         grid.cellSize = new Vector2(cellWidth, cellHeight);
         grid.childAlignment = TextAnchor.MiddleCenter;
 
-        // ----------------------------
-        // 5. FORCE CHILD SIZE (SAFE)
-        // ----------------------------
+
         foreach (RectTransform child in grid.transform)
         {
             child.sizeDelta = grid.cellSize;
@@ -429,9 +440,7 @@ public class gameManagerCard : MonoBehaviour
         }
 
         SetGridConstraint(rows, cols);
-        // ----------------------------
-        // 6. FINAL REBUILD (ONCE)
-        // ----------------------------
+
         Canvas.ForceUpdateCanvases();
     }
 
@@ -561,6 +570,7 @@ public class gameManagerCard : MonoBehaviour
             score += 10;
             //timmerBonous = +5;
             Timmer += timmerBonous;
+            addonTimmerpopup.enabled = true;
             UpdateScoreUI();
             SaveProgress();
             PlaySound(matchSound);
@@ -571,6 +581,7 @@ public class gameManagerCard : MonoBehaviour
             secondCard.isMatched = true;
             firstcard = null;
             secondCard = null;
+            Invoke("TimmerPopupOff", 0.65f);
             //SaveGame();
             if (Pairsmatched == Totalpairs)
                 LevelFinished();
@@ -594,6 +605,10 @@ public class gameManagerCard : MonoBehaviour
         secondCard = null;
     }
 
+    public void TimmerPopupOff()
+    {
+        addonTimmerpopup.enabled = false;
+    }
     void LevelFinished()
     {
         isGamefinished = true;
@@ -606,14 +621,16 @@ public class gameManagerCard : MonoBehaviour
         Finaltext.transform.gameObject.SetActive(true);
         PlaySound(gameOverSound);
         FinalPanel();
-        TogglePause();
-        TimmerText.transform.gameObject.SetActive(false);
+        isGameplay = false;
+        //TogglePause();
         TimmerText.text = 0.ToString();
-        if (isGameover) return;
+        UpdateTimmerText();
+        TimmerText.transform.gameObject.SetActive(false);
+        if (isGameover == true) return;
         isGameover = true;   // 🔥 STOP TIMER
         Timmer = 0f;
         //////addeded
-        UpdateTimmerText();
+
         //Time.timeScale = 0;
 
     }
@@ -645,8 +662,19 @@ public class gameManagerCard : MonoBehaviour
             Finaltext.transform.gameObject.SetActive(false);
             TimmerText.transform.gameObject.SetActive(false);
 
-            PlayerPrefs.DeleteAll();
-            PlayerPrefs.Save();
+            //PlayerPrefs.DeleteAll();
+            //PlayerPrefs.Save();
+
+            /// here delete only its current slot old data  not other grid datas
+            string saveKey = $"SavedGame_{rows}x{columns}";
+
+            if (PlayerPrefs.HasKey(saveKey))
+            {
+                PlayerPrefs.DeleteKey(saveKey);
+                PlayerPrefs.Save();
+                Debug.Log($"Deleted save for grid {rows}x{columns}");
+            }
+
 
             //Timmer = 0f;
         }
@@ -709,6 +737,14 @@ public class gameManagerCard : MonoBehaviour
         UpdateMatchedUI(); // NEW
         SaveProgress();
 
+    }
+
+    public void Resume()
+    {
+        TogglePause();
+        PauseScreen.SetActive(false);
+        isGameplay = true;
+        ispause = false;
     }
 
     void PlaySound(AudioClip clip)
@@ -774,10 +810,10 @@ public class gameManagerCard : MonoBehaviour
 
     public void pause()
     {
-        FinalUi.SetActive(true);
+        FinalUi.SetActive(false);
         Finaltext.transform.gameObject.SetActive(false);
         PauseScreen.SetActive(true);
-        Finaltext.transform.gameObject.SetActive(false);
+        //Finaltext.transform.gameObject.SetActive(false);
         TogglePause();
     }
 
