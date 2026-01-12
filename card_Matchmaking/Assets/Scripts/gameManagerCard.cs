@@ -320,7 +320,15 @@ public class gameManagerCard : MonoBehaviour
     }
 
 
-
+    void OnApplicationQuit()
+    {
+        // Save ONLY if game is in progress
+        if (!isGamefinished && !isGameover)
+        {
+            OnClickSave();
+            Debug.Log("Game auto-saved on application quit");
+        }
+    }
 
 
     void SetRandomRowsAndColumns()
